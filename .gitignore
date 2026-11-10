@@ -1,0 +1,5 @@
+# Entornos y temporales
+.vscode/
+.idea/
+*.tmp
+*.log
