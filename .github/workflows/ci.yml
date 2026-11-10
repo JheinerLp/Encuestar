@@ -1,0 +1,61 @@
+name: CI/CD Pipeline - SIRCE Cali
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    name: Integración Continua (PHP & MySQL Lint)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: encuesta_db
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Checkout del Repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Entorno PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_mysql, mbstring, json, curl
+
+      - name: Validar Sintaxis de Código PHP (Linting)
+        run: |
+          find . -name "*.php" -not -path "./includes/fpdf/*" -exec php -l {} \;
+
+      - name: Cargar Esquema de Base de Datos y Semillas
+        run: |
+          mysql -h 127.0.0.1 -u root -e "CREATE DATABASE IF NOT EXISTS encuesta_db;"
+          mysql -h 127.0.0.1 -u root encuesta_db < database/schema.sql
+          mysql -h 127.0.0.1 -u root encuesta_db < database/seed.sql
+
+      - name: Ejecutar Pruebas de Integración y Conexión
+        run: |
+          php -r "require 'config/database.php'; \$pdo = getDBConnection(); echo 'Conexion a BD exitosa. Tablas: ' . count(\$pdo->query('SHOW TABLES')->fetchAll());"
+
+  docker-build:
+    name: Empaquetamiento y Contenedor Docker
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del Repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir Imagen Docker de la Aplicación
+        run: |
+          docker build -t sirce-cali:latest -f docs/Dockerfile .
